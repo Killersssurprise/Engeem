@@ -292,6 +292,14 @@ void setCommand(char command, byte parameter)
   cmdPending = false;
 }
 
+void setMode(int tmp_mode){
+      if(tmp_mode <= POT_RPM)
+      {
+        mode = tmp_mode;
+      }
+  saveConfig();
+}
+
 /* Helper function to spit out amount of ram remainig */
 //! Returns the amount of freeRAM
 /*!
@@ -344,6 +352,7 @@ void select_next_wheel_cb()
     selected_wheel++;
   
   display_new_wheel();
+  saveConfig();
 }
 
 //
@@ -361,6 +370,7 @@ void select_previous_wheel_cb()
     selected_wheel--;
   
   display_new_wheel();
+  saveConfig();
 }
 
 
@@ -387,6 +397,12 @@ void setRPM(uint32_t newRPM)
   reset_new_OCR1A(newRPM);
   wanted_rpm = newRPM;
   sweep_lock = false;
+
+  saveConfig();
+}
+
+uint32_t getRPM(){
+  return wanted_rpm;
 }
 
 //! Toggle the wheel direction, useful for debugging

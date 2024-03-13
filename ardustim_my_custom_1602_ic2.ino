@@ -27,7 +27,7 @@ LiquidCrystal_I2C lcd(0x27,16,2);  // Устанавливаем дисплей
  * along with any ArduStim software.  If not, see http://www.gnu.org/licenses/
  *
  */
-
+#include "Arduino.h"
 #include "defines.h"
 #include "ardustim.h"
 #include "enums.h"
@@ -70,6 +70,18 @@ uint16_t sweep_rate = 1;
 
 sweep_step *SweepSteps;  /* Global pointer for the sweep steps */
 
+String text_to_show_top_line = "1";
+String text_to_show_bottom_line = "1";
+
+String engeem_menu[] = {"Engeem work type", "Crankshaft type"};
+int CURRENT_MENU_TYPE = 0;
+
+const int ENGEEM_WORK_TYPE = 0;
+const int CRANKSHAFT_TYPE = 1;
+
+OneButton menu_button(2, true);
+OneButton up_button(3, true); 
+OneButton down_button(4, true);
 //display
 /* int digitPins[4] = {4,5,6,7}; //4 common anode pins of the display
 const int clockPin = 11;    //74HC595 Pin 11 SHcp
@@ -101,6 +113,11 @@ const int analogInPin = A0;  // Analog input pin that the potentiometer is attac
 uint16_t potvalue = 50;
 uint16_t lastPotValue = potvalue;
 //end analog
+
+float menuTimeActivated = 0;
+uint32_t oldTime;
+float deltaTime;
+
 
 wheels Wheels[MAX_WHEELS] = {
   /* Pointer to friendly name string, pointer to edge array, RPM Scaler, Number of edges in the array */
@@ -166,13 +183,17 @@ void setup() {
   lcd.print("Mode");
 
 
-
+  menu_button.attachClick(menuSingleclick);
+  up_button.attachClick(upSingleclick);
+  down_button.attachClick(downSingleclick);
 
   
   serialSetup();
   loadConfig();
 
   cli(); // stop interrupts
+
+  //setMode(POT_RPM);
 
   /* Configuring TIMER1 (pattern generator) */
   // Set timer1 to generate pulses
@@ -281,9 +302,11 @@ void setup() {
   reset_new_OCR1A(wanted_rpm); 
 
 
-    button.attachDoubleClick(doubleclick);            // link the function to be called on a doubleclick event.
+  button.attachDoubleClick(doubleclick);            // link the function to be called on a doubleclick event.
   button.attachClick(singleclick);                  // link the function to be called on a singleclick event.
   button.attachLongPressStop(longclick);            // link the function to be called on a longpress event.
+
+  
 
 } // End setup
 
@@ -320,6 +343,14 @@ digitBuffer[3] = int(number)/1000;
 }*/
 
 
+void resetMenuTimeActivated(){
+  menuTimeActivated=3000.0f; // add 3 sec activated
+}
+
+void updateMenuTimeActivated(float dt){
+  menuTimeActivated-=dt; 
+}
+
 void doubleclick() {                                // what happens when button is double-clicked
 
 } 
@@ -352,6 +383,19 @@ void setDisplayNumber(int number){
   lcd.setCursor(4,0);
   lcd.print(number);
   
+}
+
+String getRPMNumber(int number){
+
+  lastRPM = number; 
+
+  //lcd.setCursor(0,0);
+  //lcd.clear();
+  
+//  lcd.setCursor(4,0);
+//  lcd.print(number);
+
+  return "RPM: "+number;
 }
 
 
@@ -531,10 +575,65 @@ ISR(TIMER1_COMPA_vect) {
 }
 
 
+void updateTopText(String default_text){
+
+  //Serial.println("mta: "+menuTimeActivated);
+  //Serial.println(deltaTime);
+  
+  if(menuTimeActivated <= 0){
+    text_to_show_top_line = default_text;
+  }
+}
+
+void updateBottomText(){
+
+  if(menuTimeActivated > 0){
+
+      if(CURRENT_MENU_TYPE == ENGEEM_WORK_TYPE){
+        text_to_show_bottom_line = getCurrentMode();
+      }
+
+      if(CURRENT_MENU_TYPE == CRANKSHAFT_TYPE){
+
+        char buf[80];
+        strcpy_P(buf,Wheels[selected_wheel].decoder_name);
+    
+        text_to_show_bottom_line = buf;
+      }
+    
+  }else{
+    text_to_show_bottom_line = getCurrentMode();
+  }
+}
+  
+
+void updateDisplay(){
+  lcd.setCursor(0, 0);
+  lcd.print(text_to_show_top_line);
+  //lcd.print(loop_dt);
+  //set after line text clear
+  lcd.print("                  ");
+
+  lcd.setCursor(0, 1);
+  lcd.print(text_to_show_bottom_line);
+  lcd.print("                  ");
+}
 
 void loop() 
 {
-    button.tick();
+  //calc dt between loops
+  deltaTime= (micros() - oldTime) / 1000.0;
+  oldTime = micros();
+  updateMenuTimeActivated(deltaTime);
+  //end calc dt between loops
+  
+  button.tick();
+  menu_button.tick(); 
+  menu_button.tick();      
+  up_button.tick(); 
+  down_button.tick();
+
+  
   uint16_t tmp_rpm = 0;
   /* Just handle the Serial UI, everything else is in 
    * interrupt handlers or callbacks from SerialUI.
@@ -582,18 +681,130 @@ void loop()
   
   }*/
 
-  
 
-  
-    setDisplayNumber(wanted_rpm);
+  updateTopText("RPM: "+String(wanted_rpm));
+  updateBottomText();
 
-    updateDisplayMode(mode);
+  updateDisplay();
+  
+    //setDisplayNumber(wanted_rpm);
+
+    //updateDisplayMode(mode);
   delay(1);
 //  updateDisp();
 
 
 }
 
+String getCurrentMode(){
+  String m = "";
+    if(mode == LINEAR_SWEPT_RPM){
+      m = "LINEAR_SWEPT_RPM";
+    }else if(mode == FIXED_RPM){
+      m = "FIXED_RPM";
+    }else if(mode == POT_RPM){
+      m = "POT_RPM";
+    }
+
+    return m;
+
+    //return String(mode);
+}
+
+void menuSingleclick(){        
+  resetMenuTimeActivated();
+  nextMenuType();
+  text_to_show_top_line = getCurrentMenuType();
+}
+
+void downSingleclick(){  
+
+
+  if(menuTimeActivated > 0){
+
+      resetMenuTimeActivated();
+
+      if(CURRENT_MENU_TYPE == ENGEEM_WORK_TYPE){
+        //nextWorkType();
+        int tmp_mode = mode;
+        if(tmp_mode < POT_RPM){
+          tmp_mode ++;
+        }else{
+          tmp_mode = FIXED_RPM;
+        }
+
+    
+        setMode(tmp_mode);
+        
+      }
+
+      if(CURRENT_MENU_TYPE == CRANKSHAFT_TYPE){
+        select_next_wheel_cb();
+      }
+    
+  }else{
+    if(mode == FIXED_RPM){
+      setRPM(getRPM()+50);
+    }
+    
+  }
+
+  
+  
+}
+
+void upSingleclick(){  
+
+
+  if(menuTimeActivated > 0){
+
+      resetMenuTimeActivated();
+
+      if(CURRENT_MENU_TYPE == ENGEEM_WORK_TYPE){
+        //nextWorkType();
+        int tmp_mode = mode;
+        tmp_mode --;
+        if(tmp_mode == LINEAR_SWEPT_RPM){
+          tmp_mode = POT_RPM;
+        }
+
+        setMode(tmp_mode);
+        
+      }
+
+      if(CURRENT_MENU_TYPE == CRANKSHAFT_TYPE){
+        select_previous_wheel_cb();
+      }
+    
+  }else{
+    if(mode == FIXED_RPM){
+      int tmp_rpm = getRPM()-50;
+      if(tmp_rpm < 50){
+        tmp_rpm = 50;
+      }
+      setRPM(tmp_rpm);
+    }
+    
+  }
+
+  
+  
+}
+
+void nextMenuType(){
+  resetMenuTimeActivated();
+  CURRENT_MENU_TYPE++;
+  int lastIndex = sizeof(engeem_menu)/sizeof(engeem_menu[0]) - 1;
+  
+  if(CURRENT_MENU_TYPE>lastIndex){
+    CURRENT_MENU_TYPE = 0;
+  }
+
+}
+
+String getCurrentMenuType(){
+  return engeem_menu[CURRENT_MENU_TYPE];
+}
 
 void updateDisplayMode(uint8_t mode){
 
@@ -617,6 +828,22 @@ void updateDisplayMode(uint8_t mode){
      lcd.print(buf);
  //    lcd.print(selected_wheel);
   
+}
+
+String getDisplayMode(uint8_t mode){
+   String m = "";
+    if(mode == LINEAR_SWEPT_RPM){
+      m = "LINEAR_SWEPT_RPM";
+    }else if(mode == FIXED_RPM){
+      m = "FIXED_RPM";
+    }else if(mode == POT_RPM){
+      m = "POT_RPM";
+    }
+
+     char buf[80];
+    strcpy_P(buf,Wheels[selected_wheel].decoder_name);
+    
+    return m;
 }
 
 void reset_new_OCR1A(uint32_t new_rpm)

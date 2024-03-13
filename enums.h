@@ -37,9 +37,9 @@ enum {
 };
 
 enum {
-  LINEAR_SWEPT_RPM,
-  FIXED_RPM,
-  POT_RPM
+  LINEAR_SWEPT_RPM, //0
+  FIXED_RPM, //1
+  POT_RPM // 2
 };
 
 #endif

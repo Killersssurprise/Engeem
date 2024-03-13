@@ -36,7 +36,8 @@ void set_rpm_cb();
 void sweep_rpm_cb();
 void reverse_wheel_direction_cb();
 void setRPM(uint32_t);
-
+uint32_t getRPM();
+void setMode(int tmp_mode);
 /* General functions */
 void serialSetup();
 void display_new_wheel();
